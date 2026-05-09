@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Рекурсивная канбан-доска</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: rgba(18, 25, 46, 0.9);
+      --panel-2: rgba(24, 32, 59, 0.95);
+      --line: rgba(255, 255, 255, 0.09);
+      --text: #eef3ff;
+      --muted: #a8b3cf;
+      --accent: #7c9cff;
+      --accent-2: #8ef0d0;
+      --planned: #7ea1ff;
+      --progress: #ffbf69;
+      --done: #77e4a1;
+      --danger: #ff8b8b;
+      --shadow: 0 20px 50px rgba(0,0,0,.35);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 700px at -10% -10%, rgba(124,156,255,.18), transparent 55%),
+        radial-gradient(1000px 600px at 110% 10%, rgba(142,240,208,.12), transparent 50%),
+        linear-gradient(180deg, #09101d 0%, #0d1326 100%);
+      overflow: hidden;
+    }
+
+    .shell {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 14px;
+      padding: 14px;
+    }
+
+    .topbar, .toolbar {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+      backdrop-filter: blur(14px);
+    }
+
+    .topbar {
+      position: relative;
+      z-index: 20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 18px;
+      min-height: 88px;
+    }
+
+    .title-wrap {
+      min-width: 0;
+    }
+
+    .title-wrap h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+    }
+
+    .title-wrap p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      max-width: 900px;
+      font-size: 13px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      white-space: nowrap;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(124,156,255,.12);
+      border: 1px solid rgba(124,156,255,.22);
+      color: #dfe7ff;
+      font-size: 13px;
+    }
+
+    .icon-btn, .button {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.05);
+      color: var(--text);
+      cursor: pointer;
+      font: inherit;
+      transition: .18s ease;
+    }
+
+    .icon-btn:hover, .button:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,.09);
+    }
+
+    .icon-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 220px;
+      padding: 8px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(14, 20, 38, 0.98);
+      box-shadow: var(--shadow);
+      display: none;
+      z-index: 50;
+    }
+
+    .menu.open { display: grid; gap: 6px; }
+
+    .menu .button {
+      width: 100%;
+      text-align: left;
+      padding: 11px 12px;
+      border-radius: 13px;
+    }
+
+    .toolbar {
+      position: relative;
+      z-index: 1;
+      padding: 12px 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .toolbar-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .breadcrumbs {
+      gap: 6px;
+    }
+
+    .crumb {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+      padding: 7px 11px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: .18s ease;
+      font-size: 13px;
+    }
+
+    .crumb:hover { transform: translateY(-1px); background: rgba(255,255,255,.07); }
+    .crumb.current {
+      background: rgba(124,156,255,.16);
+      border-color: rgba(124,156,255,.28);
+    }
+
+    .creator {
+      display: grid;
+      grid-template-columns: 1.25fr 1.75fr auto;
+      gap: 10px;
+    }
+
+    .input, .textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.05);
+      color: var(--text);
+      outline: none;
+      border-radius: 16px;
+      padding: 11px 13px;
+      font: inherit;
+    }
+
+    .textarea {
+      min-height: 84px;
+      resize: vertical;
+    }
+
+    .input::placeholder, .textarea::placeholder { color: #8c98b8; }
+
+    .button {
+      padding: 10px 13px;
+      border-radius: 15px;
+    }
+
+    .button.primary {
+      background: linear-gradient(180deg, rgba(124,156,255,.26), rgba(124,156,255,.14));
+      border-color: rgba(124,156,255,.34);
+    }
+    .button.good {
+      background: linear-gradient(180deg, rgba(119,228,161,.2), rgba(119,228,161,.1));
+      border-color: rgba(119,228,161,.28);
+    }
+    .button.warn {
+      background: linear-gradient(180deg, rgba(255,191,105,.22), rgba(255,191,105,.12));
+      border-color: rgba(255,191,105,.28);
+    }
+    .button.danger {
+      background: linear-gradient(180deg, rgba(255,139,139,.2), rgba(255,139,139,.1));
+      border-color: rgba(255,139,139,.28);
+    }
+
+    .muted-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      min-height: 17px;
+    }
+
+    .board {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .column {
+      min-height: 0;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .column-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
+    }
+
+    .column-title {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 5px rgba(255,255,255,.04);
+    }
+    .dot.planned { background: var(--planned); }
+    .dot.progress { background: var(--progress); }
+    .dot.done { background: var(--done); }
+
+    .count {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--line);
+    }
+
+    .column-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .dropzone {
+      flex: 1;
+      min-height: 140px;
+      border-radius: 20px;
+      transition: .18s ease;
+    }
+
+    .dropzone.active {
+      background: rgba(124,156,255,.08);
+      outline: 1px dashed rgba(124,156,255,.35);
+      outline-offset: -8px;
+    }
+
+    .empty {
+      min-height: 120px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed rgba(255,255,255,.09);
+      border-radius: 20px;
+      padding: 18px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.03));
+      border-radius: 22px;
+      padding: 13px;
+      display: grid;
+      gap: 9px;
+      cursor: grab;
+      user-select: none;
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255,255,255,.16);
+      background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035));
+    }
+
+    .card.locked { cursor: default; }
+    .card.dragging { opacity: .55; transform: rotate(1deg) scale(.99); }
+
+    .card-top {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .card-main {
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.25;
+      letter-spacing: -0.015em;
+    }
+
+    .card-desc {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .pill {
+      padding: 6px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      color: var(--muted);
+    }
+
+    .pill.accent {
+      background: rgba(124,156,255,.12);
+      border-color: rgba(124,156,255,.23);
+      color: #dbe4ff;
+      white-space: nowrap;
+    }
+
+    .card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .mini {
+      padding: 7px 9px;
+      border-radius: 12px;
+      font-size: 12px;
+    }
+
+    input[type="file"] { display: none; }
+
+    @media (max-width: 1050px) {
+      body { overflow: auto; }
+      .shell { height: auto; }
+      .board { grid-template-columns: 1fr; }
+      .creator { grid-template-columns: 1fr; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .topbar-right { width: 100%; justify-content: space-between; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="topbar">
+      <div class="title-wrap">
+        <h1>Рекурсивная канбан-доска</h1>
+      </div>
+      <div class="topbar-right">
+        <div class="badge" id="statsBadge">0 задач</div>
+        <button class="icon-btn" id="menuBtn" title="Меню">⋯</button>
+        <div class="menu" id="menuPanel">
+          <button class="button" id="exportBtn">Экспорт в файл</button>
+          <label class="button" for="importInput">Импорт из файла</label>
+          <input id="importInput" type="file" accept=".txt,.json" />
+          <button class="button danger" id="resetBtn">Сбросить всё</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="toolbar">
+      <div class="toolbar-row breadcrumbs" id="breadcrumbs"></div>
+      <div class="toolbar-row creator">
+        <input class="input" id="taskTitle" placeholder="Название новой задачи" />
+        <input class="input" id="taskDesc" placeholder="Короткое описание или заметка" />
+        <button class="button primary" id="addTaskBtn">Добавить задачу</button>
+      </div>
+      <div class="toolbar-row muted-note" id="contextNote"></div>
+    </section>
+
+    <section class="board">
+      <div class="column" data-status="planned">
+        <div class="column-header">
+          <div class="column-title"><span class="dot planned"></span>Запланировано</div>
+          <div class="count" id="count-planned">0</div>
+        </div>
+        <div class="column-body dropzone" id="plannedCol"></div>
+      </div>
+
+      <div class="column" data-status="in_progress">
+        <div class="column-header">
+          <div class="column-title"><span class="dot progress"></span>В процессе</div>
+          <div class="count" id="count-in_progress">0</div>
+        </div>
+        <div class="column-body dropzone" id="inProgressCol"></div>
+      </div>
+
+      <div class="column" data-status="done">
+        <div class="column-header">
+          <div class="column-title"><span class="dot done"></span>Сделано</div>
+          <div class="count" id="count-done">0</div>
+        </div>
+        <div class="column-body dropzone" id="doneCol"></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'recursive-kanban-board-v2';
+
+    const state = loadState() || {
+      rootId: 'root',
+      currentId: 'root',
+      nextId: 1,
+      tasks: {
+        root: {
+          id: 'root',
+          parentId: null,
+          title: 'Главная доска',
+          description: 'Корневой уровень',
+          status: 'planned',
+          manualDone: false,
+          children: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }
+      }
+    };
+
+    seedDemoIfEmpty();
+
+    const els = {
+      breadcrumbs: document.getElementById('breadcrumbs'),
+      titleInput: document.getElementById('taskTitle'),
+      descInput: document.getElementById('taskDesc'),
+      addTaskBtn: document.getElementById('addTaskBtn'),
+      exportBtn: document.getElementById('exportBtn'),
+      importInput: document.getElementById('importInput'),
+      resetBtn: document.getElementById('resetBtn'),
+      contextNote: document.getElementById('contextNote'),
+      statsBadge: document.getElementById('statsBadge'),
+      plannedCol: document.getElementById('plannedCol'),
+      inProgressCol: document.getElementById('inProgressCol'),
+      doneCol: document.getElementById('doneCol'),
+      countPlanned: document.getElementById('count-planned'),
+      countInProgress: document.getElementById('count-in_progress'),
+      countDone: document.getElementById('count-done'),
+      menuBtn: document.getElementById('menuBtn'),
+      menuPanel: document.getElementById('menuPanel'),
+    };
+
+    let draggedTaskId = null;
+
+    bindEvents();
+    render();
+
+    function bindEvents() {
+      els.addTaskBtn.addEventListener('click', addTaskFromInputs);
+      els.titleInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addTaskFromInputs();
+      });
+      els.descInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addTaskFromInputs();
+      });
+
+      els.exportBtn.addEventListener('click', exportBoard);
+      els.importInput.addEventListener('change', importBoard);
+      els.resetBtn.addEventListener('click', resetBoard);
+
+      els.menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        els.menuPanel.classList.toggle('open');
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!els.menuPanel.contains(e.target) && e.target !== els.menuBtn) {
+          els.menuPanel.classList.remove('open');
+        }
+      });
+
+      [
+        [els.plannedCol, 'planned'],
+        [els.inProgressCol, 'in_progress'],
+        [els.doneCol, 'done']
+      ].forEach(([el, status]) => {
+        el.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          if (canDropTo(status)) el.classList.add('active');
+        });
+        el.addEventListener('dragleave', () => el.classList.remove('active'));
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          el.classList.remove('active');
+          handleDrop(status);
+        });
+      });
+    }
+
+    function seedDemoIfEmpty() {
+      const root = state.tasks[state.rootId];
+      if (root.children.length) return;
+
+      const soup = createTask('Сварить борщ', 'Пример составной задачи с вложенной доской', state.rootId);
+      const css = createTask('Сделать страницу проекта', 'Пример обычной задачи без вложенности', state.rootId);
+      setTaskStatus(css.id, 'done', false);
+
+      const shop = createTask('Сходить в магазин', 'Подготовка к борщу', soup.id);
+      const products = createTask('Купить продукты', 'Свёкла, капуста, мясо, картошка', soup.id);
+      createTask('Помыть овощи', 'Подготовить всё к варке', soup.id);
+      setTaskStatus(products.id, 'in_progress', false);
+	  setTaskStatus(shop.id, 'done', false);
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function persist() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function uid() {
+      return `task_${state.nextId++}`;
+    }
+
+    function now() {
+      return Date.now();
+    }
+
+    function createTask(title, description, parentId) {
+      const id = uid();
+      state.tasks[id] = {
+        id,
+        parentId,
+        title,
+        description,
+        status: 'planned',
+        manualDone: false,
+        children: [],
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      state.tasks[parentId].children.push(id);
+      state.tasks[parentId].updatedAt = now();
+      clearManualDoneUpwards(parentId);
+      recalcUpwards(parentId);
+      persist();
+      return state.tasks[id];
+    }
+
+    function addTaskFromInputs() {
+      const title = els.titleInput.value.trim();
+      const description = els.descInput.value.trim();
+      if (!title) return;
+      createTask(title, description, state.currentId);
+      els.titleInput.value = '';
+      els.descInput.value = '';
+      render();
+      els.titleInput.focus();
+    }
+
+    function getTask(id) {
+      return state.tasks[id];
+    }
+
+    function getCurrentTask() {
+      return getTask(state.currentId);
+    }
+
+    function getChildren(parentId) {
+      return getTask(parentId).children.map(id => getTask(id));
+    }
+
+    function isRoot(id) {
+      return id === state.rootId;
+    }
+
+    function hasChildren(task) {
+      return task.children.length > 0;
+    }
+
+    function getEffectiveStatus(task) {
+      if (!hasChildren(task)) return task.status;
+      if (task.manualDone) return 'done';
+      const childStatuses = task.children.map(id => getEffectiveStatus(getTask(id)));
+      const anyActive = childStatuses.some(s => s === 'in_progress' || s === 'done');
+      return anyActive ? 'in_progress' : 'planned';
+    }
+
+    function setTaskStatus(taskId, status, renderAfter = true) {
+      const task = getTask(taskId);
+      task.status = status;
+      task.manualDone = false;
+      task.updatedAt = now();
+      clearManualDoneUpwards(task.parentId);
+      recalcUpwards(task.parentId);
+      persist();
+      if (renderAfter) render();
+    }
+
+    function markTaskDone(taskId) {
+      const task = getTask(taskId);
+      task.manualDone = true;
+      task.status = 'done';
+      task.updatedAt = now();
+      markDescendantsDone(taskId);
+      recalcUpwards(task.parentId);
+      persist();
+      render();
+    }
+
+    function markDescendantsDone(taskId) {
+      const task = getTask(taskId);
+      task.children.forEach(childId => {
+        const child = getTask(childId);
+        child.manualDone = true;
+        child.status = 'done';
+        child.updatedAt = now();
+        markDescendantsDone(childId);
+      });
+    }
+
+    function unmarkTaskDone(taskId) {
+      const task = getTask(taskId);
+      task.manualDone = false;
+      task.updatedAt = now();
+      recalcUpwards(task.id);
+      recalcUpwards(task.parentId);
+      persist();
+      render();
+    }
+
+    function clearManualDoneUpwards(parentId) {
+      let cursor = parentId;
+      while (cursor) {
+        const task = getTask(cursor);
+        if (task.manualDone) task.manualDone = false;
+        task.updatedAt = now();
+        cursor = task.parentId;
+      }
+    }
+
+    function recalcUpwards(parentId) {
+      let cursor = parentId;
+      while (cursor) {
+        const task = getTask(cursor);
+        if (!hasChildren(task)) {
+          cursor = task.parentId;
+          continue;
+        }
+        task.status = task.manualDone ? 'done' : deriveParentStatus(task);
+        task.updatedAt = now();
+        cursor = task.parentId;
+      }
+    }
+
+    function deriveParentStatus(task) {
+      const childStatuses = task.children.map(id => getEffectiveStatus(getTask(id)));
+      const anyActive = childStatuses.some(s => s === 'in_progress' || s === 'done');
+      return anyActive ? 'in_progress' : 'planned';
+    }
+
+    function removeTask(taskId) {
+      const task = getTask(taskId);
+      if (!task || isRoot(taskId)) return;
+      const parent = getTask(task.parentId);
+      parent.children = parent.children.filter(id => id !== taskId);
+      deleteTaskRecursive(taskId);
+      clearManualDoneUpwards(parent.id);
+      recalcUpwards(parent.id);
+      persist();
+      render();
+    }
+
+    function deleteTaskRecursive(taskId) {
+      const task = getTask(taskId);
+      task.children.forEach(deleteTaskRecursive);
+      delete state.tasks[taskId];
+    }
+
+    function renameTask(taskId) {
+      const task = getTask(taskId);
+      const title = prompt('Новое название задачи:', task.title);
+      if (title === null) return;
+      task.title = title.trim() || task.title;
+      const desc = prompt('Новое описание задачи:', task.description || '');
+      if (desc !== null) task.description = desc.trim();
+      task.updatedAt = now();
+      persist();
+      render();
+    }
+
+    function openTask(taskId) {
+      state.currentId = taskId;
+      persist();
+      render();
+    }
+
+    function buildBreadcrumbs() {
+      const trail = [];
+      let cursor = getCurrentTask();
+      while (cursor) {
+        trail.unshift(cursor);
+        cursor = cursor.parentId ? getTask(cursor.parentId) : null;
+      }
+      return trail;
+    }
+
+    function render() {
+      renderBreadcrumbs();
+      renderBoard();
+      renderMeta();
+      persist();
+    }
+
+    function renderBreadcrumbs() {
+      const trail = buildBreadcrumbs();
+      els.breadcrumbs.innerHTML = '';
+      trail.forEach((task, idx) => {
+        const btn = document.createElement('button');
+        btn.className = `crumb ${idx === trail.length - 1 ? 'current' : ''}`;
+        btn.textContent = task.title;
+        btn.addEventListener('click', () => {
+          state.currentId = task.id;
+          render();
+        });
+        els.breadcrumbs.appendChild(btn);
+      });
+    }
+
+    function renderMeta() {
+      const current = getCurrentTask();
+      const total = Object.keys(state.tasks).length - 1;
+      const done = Object.values(state.tasks).filter(t => !isRoot(t.id) && getEffectiveStatus(t) === 'done').length;
+      els.statsBadge.textContent = `${total} задач · ${done} сделано`;
+
+      if (isRoot(current.id)) {
+        els.contextNote.textContent = 'Открыт корневой уровень. Клик по карточке открывает вложенную доску. Простые карточки можно перетаскивать между колонками.';
+      } else {
+        const effective = statusLabel(getEffectiveStatus(current));
+        const compositeNote = hasChildren(current)
+          ? current.manualDone
+            ? 'Эта задача вручную отмечена как «Сделано», поэтому все её вложенные задачи тоже завершены.'
+            : 'У задачи есть подзадачи. Любая активность внутри переводит её в «В процессе», но не завершает автоматически.'
+          : 'У этой задачи пока нет подзадач, её можно свободно двигать между колонками.';
+        els.contextNote.textContent = `Сейчас открыта: ${current.title} · статус: ${effective}. ${compositeNote}`;
+      }
+    }
+
+    function renderBoard() {
+      const children = getChildren(state.currentId);
+      const buckets = { planned: [], in_progress: [], done: [] };
+      children.forEach(task => buckets[getEffectiveStatus(task)].push(task));
+
+      renderColumn(els.plannedCol, buckets.planned, 'planned');
+      renderColumn(els.inProgressCol, buckets.in_progress, 'in_progress');
+      renderColumn(els.doneCol, buckets.done, 'done');
+
+      els.countPlanned.textContent = String(buckets.planned.length);
+      els.countInProgress.textContent = String(buckets.in_progress.length);
+      els.countDone.textContent = String(buckets.done.length);
+    }
+
+    function renderColumn(container, tasks, status) {
+      container.innerHTML = '';
+      if (!tasks.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = status === 'planned'
+          ? 'Здесь пока пусто. Можно добавить новую задачу.'
+          : status === 'in_progress'
+            ? 'Когда работа по задачам начнётся, они появятся здесь.'
+            : 'Когда задачи будут завершены, они появятся здесь.';
+        container.appendChild(empty);
+        return;
+      }
+
+      tasks.forEach(task => container.appendChild(createCard(task)));
+    }
+
+    function createCard(task) {
+      const card = document.createElement('article');
+      const composite = hasChildren(task);
+      const effectiveStatus = getEffectiveStatus(task);
+      card.className = `card ${composite ? 'locked' : ''}`;
+      card.draggable = !composite;
+
+      if (!composite) {
+        card.addEventListener('dragstart', () => {
+          draggedTaskId = task.id;
+          card.classList.add('dragging');
+        });
+        card.addEventListener('dragend', () => {
+          draggedTaskId = null;
+          card.classList.remove('dragging');
+        });
+      }
+
+      const doneChildren = task.children.filter(id => getEffectiveStatus(getTask(id)) === 'done').length;
+
+      card.innerHTML = `
+        <div class="card-top">
+          <div class="card-main">
+            <h3 class="card-title"></h3>
+          </div>
+          <span class="pill accent">${statusLabel(effectiveStatus)}</span>
+        </div>
+        <p class="card-desc"></p>
+        <div class="pill-row">
+          <span class="pill">Вложенность: ${task.children.length}</span>
+          ${task.children.length ? `<span class="pill">Сделано внутри: ${doneChildren}/${task.children.length}</span>` : '<span class="pill">Обычная задача</span>'}
+          ${composite ? '<span class="pill">Статус авто</span>' : '<span class="pill">Статус вручную</span>'}
+        </div>
+        <div class="card-actions"></div>
+      `;
+
+      card.querySelector('.card-title').textContent = task.title;
+      card.querySelector('.card-desc').textContent = task.description || 'Без описания';
+      card.querySelector('.card-main').addEventListener('click', () => openTask(task.id));
+      card.querySelector('.card-desc').addEventListener('click', () => openTask(task.id));
+
+      const actions = card.querySelector('.card-actions');
+
+      const editBtn = button('Изменить', 'mini');
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        renameTask(task.id);
+      });
+      actions.appendChild(editBtn);
+
+      if (composite) {
+        const doneBtn = button(task.manualDone ? 'Снять done' : 'Завершить всё', `mini ${task.manualDone ? 'warn' : 'good'}`);
+        doneBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          task.manualDone ? unmarkTaskDone(task.id) : markTaskDone(task.id);
+        });
+        actions.appendChild(doneBtn);
+      } else {
+        if (effectiveStatus !== 'planned') {
+          const planBtn = button('В план', 'mini');
+          planBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setTaskStatus(task.id, 'planned');
+          });
+          actions.appendChild(planBtn);
+        }
+        if (effectiveStatus !== 'in_progress') {
+          const progBtn = button('В процесс', 'mini warn');
+          progBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setTaskStatus(task.id, 'in_progress');
+          });
+          actions.appendChild(progBtn);
+        }
+        if (effectiveStatus !== 'done') {
+          const doneBtn = button('Завершить', 'mini good');
+          doneBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setTaskStatus(task.id, 'done');
+          });
+          actions.appendChild(doneBtn);
+        }
+      }
+
+      const deleteBtn = button('Удалить', 'mini danger');
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm(`Удалить задачу «${task.title}» вместе со всеми вложенными подзадачами?`)) {
+          removeTask(task.id);
+        }
+      });
+      actions.appendChild(deleteBtn);
+
+      return card;
+    }
+
+    function button(text, extra = '') {
+      const b = document.createElement('button');
+      b.className = `button ${extra}`.trim();
+      b.textContent = text;
+      return b;
+    }
+
+    function statusLabel(status) {
+      return status === 'planned' ? 'Запланировано' : status === 'in_progress' ? 'В процессе' : 'Сделано';
+    }
+
+    function canDropTo(targetStatus) {
+      if (!draggedTaskId) return false;
+      const task = getTask(draggedTaskId);
+      return !hasChildren(task) && task.parentId === state.currentId && getEffectiveStatus(task) !== targetStatus;
+    }
+
+    function handleDrop(targetStatus) {
+      if (!canDropTo(targetStatus)) return;
+      setTaskStatus(draggedTaskId, targetStatus);
+    }
+
+    function exportBoard() {
+      els.menuPanel.classList.remove('open');
+      const data = JSON.stringify(state, null, 2);
+      const blob = new Blob([data], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'recursive-kanban-board.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function importBoard(event) {
+      els.menuPanel.classList.remove('open');
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result));
+          validateImportedState(parsed);
+          Object.keys(state).forEach(k => delete state[k]);
+          Object.assign(state, parsed);
+          persist();
+          render();
+          alert('Импорт выполнен.');
+        } catch (err) {
+          alert('Не удалось импортировать файл: ' + (err && err.message ? err.message : 'неверный формат'));
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsText(file, 'utf-8');
+    }
+
+    function validateImportedState(data) {
+      if (!data || typeof data !== 'object') throw new Error('файл пустой или повреждён');
+      if (!data.tasks || typeof data.tasks !== 'object') throw new Error('в файле нет поля tasks');
+      if (!data.rootId || !data.currentId) throw new Error('в файле нет rootId/currentId');
+      if (!data.tasks[data.rootId]) throw new Error('корневая задача не найдена');
+      for (const task of Object.values(data.tasks)) {
+        if (!('id' in task) || !('children' in task)) throw new Error('одна из задач повреждена');
+      }
+    }
+
+    function resetBoard() {
+      els.menuPanel.classList.remove('open');
+      if (!confirm('Полностью очистить доску и создать новую пустую?')) return;
+      localStorage.removeItem(STORAGE_KEY);
+      location.reload();
+    }
+  </script>
+</body>
+</html>
