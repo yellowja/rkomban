@@ -656,7 +656,7 @@
             children: [], createdAt: now(), updatedAt: now()
           },
           task_6: {
-            id: 'task_6', parentId: 'root', title: 'hi', description: '',
+            id: 'task_6', parentId: 'root', title: 'пр', description: '',
             status: 'planned', manualDone: false, manualInProgress: false,
             children: [], createdAt: now(), updatedAt: now()
           }
@@ -1471,12 +1471,6 @@
         childBadge.className = 'badge';
         childBadge.textContent = String(doneChildrenCount(itemId)) + '/' + String(childrenCount) + ' внутри';
         badges.appendChild(childBadge);
-      }
-      if (target && target.manualDone && target.status === 'done') {
-        var doneBadge = document.createElement('span');
-        doneBadge.className = 'badge';
-        doneBadge.textContent = 'вручную завершено';
-        badges.appendChild(doneBadge);
       }
       if (badges.children.length) card.appendChild(badges);
 
