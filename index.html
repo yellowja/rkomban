@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Рекурсивная канбан-доска v5</title>
+  <title>Рекурсивная канбан-доска v7</title>
   <style>
     :root {
       --bg: #0b1020;
@@ -64,7 +64,17 @@
       min-height: 82px;
     }
 
-    .title-wrap { min-width: 0; }
+    .title-wrap { min-width: 0; flex: 1 1 auto; }
+    .title-search-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+    }
+    .title-search-row h1 {
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
     .title-wrap h1 {
       margin: 0;
       font-size: 24px;
@@ -76,6 +86,101 @@
       color: var(--muted);
       max-width: 980px;
       font-size: 13px;
+    }
+
+    .search-wrap {
+      position: relative;
+      margin-top: 0;
+      max-width: none;
+      flex: 1 1 420px;
+      min-width: 260px;
+      z-index: 80;
+    }
+    .search-input {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.055);
+      color: var(--text);
+      outline: none;
+      border-radius: 16px;
+      padding: 10px 13px;
+      font: inherit;
+      font-size: 14px;
+    }
+    .search-input::placeholder { color: #8c98b8; }
+    .search-input:focus {
+      border-color: rgba(142,240,208,.42);
+      background: rgba(255,255,255,.075);
+    }
+    .search-results {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 8px);
+      display: none;
+      gap: 6px;
+      max-height: 320px;
+      overflow: auto;
+      padding: 8px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(14, 20, 38, 0.98);
+      box-shadow: var(--shadow);
+      z-index: 90;
+    }
+    .search-results.open { display: grid; }
+    .search-result {
+      width: 100%;
+      border: 1px solid transparent;
+      background: rgba(255,255,255,.035);
+      color: var(--text);
+      border-radius: 13px;
+      padding: 7px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .search-result:hover {
+      border-color: rgba(142,240,208,.28);
+      background: rgba(255,255,255,.075);
+    }
+    .search-open-btn {
+      flex: 1 1 auto;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      padding: 3px 4px;
+      display: grid;
+      gap: 3px;
+    }
+    .search-link-btn {
+      flex: 0 0 auto;
+      border: 1px solid rgba(142,240,208,.25);
+      background: rgba(142,240,208,.08);
+      color: #dffcf4;
+      border-radius: 11px;
+      padding: 7px 9px;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .search-link-btn:hover { background: rgba(142,240,208,.16); }
+    .search-link-btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+      background: rgba(255,255,255,.035);
+      color: var(--muted);
+      border-color: var(--line);
+    }
+    .search-result-title { font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+    .search-result-meta { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .search-empty {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 9px 10px;
     }
 
     .topbar-right {
@@ -297,6 +402,15 @@
     .card:active { cursor: grabbing; }
     .card.dragging { opacity: .55; transform: rotate(1deg) scale(.99); }
     .card.link-card { border-style: dashed; }
+    .card.highlighted {
+      border-color: rgba(142,240,208,.8);
+      box-shadow: 0 0 0 2px rgba(142,240,208,.18), 0 16px 34px rgba(0,0,0,.25);
+      animation: highlightPulse 1.5s ease-in-out 2;
+    }
+    @keyframes highlightPulse {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-2px); }
+    }
     .card.drop-inside { outline: 2px solid rgba(142,240,208,.78); outline-offset: 3px; }
     .card.drop-before::before, .card.drop-after::after {
       content: '';
@@ -367,7 +481,7 @@
     }
     .nest-zone.over::after { opacity: 1; transform: translateY(0); }
 
-    .actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-start; }
     .small {
       border: 1px solid var(--line);
       background: rgba(255,255,255,.04);
@@ -387,7 +501,11 @@
       .board { grid-template-columns: 1fr; }
       .composer, .creator { grid-template-columns: 1fr; }
       .topbar { align-items: flex-start; flex-direction: column; }
+      .title-wrap { width: 100%; }
+      .title-search-row { flex-direction: column; align-items: stretch; }
+      .title-search-row h1 { white-space: normal; }
       .topbar-right { width: 100%; justify-content: space-between; }
+      .search-wrap { width: 100%; max-width: none; flex-basis: auto; min-width: 0; }
       .card-main { padding-right: 0; }
       .nest-zone { top: 8px; right: 8px; }
     }
@@ -397,7 +515,13 @@
   <div class="shell">
     <section class="topbar">
       <div class="title-wrap">
-        <h1>Рекурсивная канбан-доска</h1>
+        <div class="title-search-row">
+          <h1>Рекурсивная канбан-доска</h1>
+          <div class="search-wrap" id="searchWrap">
+            <input class="search-input" id="searchInput" placeholder="Поиск задачи по названию или описанию" autocomplete="off" />
+            <div class="search-results" id="searchResults"></div>
+          </div>
+        </div>
       </div>
       <div class="topbar-right">
         <div class="stats-badge" id="stats">0 задач</div>
@@ -416,7 +540,6 @@
         <input class="input" id="titleInput" placeholder="Название новой задачи" autocomplete="off" />
         <input class="input" id="descInput" placeholder="Короткое описание или заметка" autocomplete="off" />
         <button class="button primary" id="addBtn">Добавить задачу</button>
-        <button class="button" id="linkBtn">Добавить ссылку</button>
         <input type="file" id="fileInput" accept=".json,.txt,application/json,text/plain" />
       </div>
     </section>
@@ -438,6 +561,46 @@
     var state = null;
     var draggingId = null;
     var suppressNextClick = false;
+    var highlightId = null;
+
+    function taskHash(id) {
+      return '#task=' + encodeURIComponent(id || 'root');
+    }
+
+    function taskIdFromLocation() {
+      var hash = window.location.hash || '';
+      var match = hash.match(/^#task=(.+)$/);
+      if (!match) return null;
+      try { return decodeURIComponent(match[1]); } catch (err) { return null; }
+    }
+
+    function validBoardId(id) {
+      var t = id ? getTask(id) : null;
+      if (!t || isLinkTask(t)) return state ? state.rootId : 'root';
+      return t.id;
+    }
+
+    function updateBrowserHistory(mode) {
+      if (!window.history || !state) return;
+      var id = validBoardId(state.currentId);
+      var url = taskHash(id);
+      var payload = { currentId: id };
+      if (mode === 'replace') {
+        window.history.replaceState(payload, '', url);
+      } else if (window.location.hash !== url) {
+        window.history.pushState(payload, '', url);
+      } else {
+        window.history.replaceState(payload, '', url);
+      }
+    }
+
+    function navigateToTask(id, options) {
+      options = options || {};
+      state.currentId = validBoardId(id);
+      persist();
+      if (!options.fromPop) updateBrowserHistory(options.replace ? 'replace' : 'push');
+      render(options.renderOptions);
+    }
 
     function now() { return Date.now(); }
     function uid() { state.nextId = (state.nextId || 1) + 1; return 'task_' + state.nextId; }
@@ -480,12 +643,12 @@
             children: ['task_5'], createdAt: now(), updatedAt: now()
           },
           task_5: {
-            id: 'task_5', parentId: 'task_4', title: 'Составить резюме', description: 'Эту задачу можно добавить ссылкой в другую доску',
+            id: 'task_5', parentId: 'task_4', title: 'Составить резюме', description: '',
             status: 'planned', manualDone: false, manualInProgress: false,
             children: [], createdAt: now(), updatedAt: now()
           },
           task_6: {
-            id: 'task_6', parentId: 'root', title: 'Поддерживать /\\/erds', description: 'Здесь можно создать ссылку на резюме',
+            id: 'task_6', parentId: 'root', title: 'Пр', description: '',
             status: 'planned', manualDone: false, manualInProgress: false,
             children: [], createdAt: now(), updatedAt: now()
           }
@@ -800,7 +963,7 @@
       item.updatedAt = now();
       parent.updatedAt = now();
       recalcAll(true);
-      render();
+      render({ preserveScroll: true });
     }
 
     function moveInside(itemId, targetItemId) {
@@ -811,7 +974,7 @@
       applyItemStatus(itemId, 'planned');
       attachToParent(itemId, targetContainerId);
       recalcAll(true);
-      render();
+      render({ preserveScroll: true });
     }
 
     function taskPath(id) {
@@ -927,9 +1090,118 @@
       var id = realId(itemId);
       var t = getTask(id);
       if (!t || isLinkTask(t)) return;
-      state.currentId = id;
-      persist();
-      render();
+      navigateToTask(id);
+    }
+
+    function hideSearchResults() {
+      if (els.searchResults) els.searchResults.classList.remove('open');
+    }
+
+    function searchMatches(query) {
+      var q = safeText(query).trim().toLowerCase();
+      if (!q) return [];
+      return Object.values(state.tasks).filter(function(t) {
+        return t && !isRoot(t.id) && !isLinkTask(t);
+      }).filter(function(t) {
+        return safeText(t.title).toLowerCase().indexOf(q) >= 0 || safeText(t.description).toLowerCase().indexOf(q) >= 0;
+      }).sort(function(a, b) {
+        var aTitle = safeText(a.title).toLowerCase();
+        var bTitle = safeText(b.title).toLowerCase();
+        var aStarts = aTitle.indexOf(q) === 0 ? 0 : 1;
+        var bStarts = bTitle.indexOf(q) === 0 ? 0 : 1;
+        if (aStarts !== bStarts) return aStarts - bStarts;
+        return aTitle.localeCompare(bTitle, 'ru');
+      }).slice(0, 12);
+    }
+
+    function revealTaskFromSearch(taskId) {
+      var t = getTask(taskId);
+      if (!t || isRoot(taskId)) return;
+      highlightId = taskId;
+      hideSearchResults();
+      if (els.searchInput) els.searchInput.blur();
+      navigateToTask(t.parentId || state.rootId);
+    }
+
+    function canCreateLinkTo(targetId) {
+      var target = getTask(targetId);
+      var current = getTask(state.currentId);
+      if (!target || !current) return false;
+      if (isRoot(targetId) || isLinkTask(target)) return false;
+      if (targetId === state.currentId) return false;
+      return !current.children.some(function(childId) { return realId(childId) === targetId; });
+    }
+
+    function addSearchLink(targetId) {
+      if (!canCreateLinkTo(targetId)) {
+        alert('Сюда уже нельзя добавить такую ссылку: задача либо уже есть на этой доске, либо это текущая открытая задача.');
+        return;
+      }
+      var link = createLinkTask(targetId, state.currentId);
+      highlightId = link.id;
+      hideSearchResults();
+      if (els.searchInput) els.searchInput.blur();
+      render({ preserveScroll: true });
+    }
+
+    function renderSearchResults() {
+      if (!els.searchInput || !els.searchResults) return;
+      var matches = searchMatches(els.searchInput.value);
+      els.searchResults.innerHTML = '';
+      if (!els.searchInput.value.trim()) {
+        hideSearchResults();
+        return;
+      }
+      if (!matches.length) {
+        var empty = document.createElement('div');
+        empty.className = 'search-empty';
+        empty.textContent = 'Ничего не найдено';
+        els.searchResults.appendChild(empty);
+        els.searchResults.classList.add('open');
+        return;
+      }
+      matches.forEach(function(t) {
+        var row = document.createElement('div');
+        row.className = 'search-result';
+
+        var openBtn = document.createElement('button');
+        openBtn.type = 'button';
+        openBtn.className = 'search-open-btn';
+
+        var title = document.createElement('div');
+        title.className = 'search-result-title';
+        title.textContent = t.title || 'Без названия';
+        var meta = document.createElement('div');
+        meta.className = 'search-result-meta';
+        var statusTitle = STATUSES[t.status] ? STATUSES[t.status].title : t.status;
+        meta.textContent = statusTitle + ' • ' + taskPath(t.id);
+        openBtn.appendChild(title);
+        openBtn.appendChild(meta);
+        openBtn.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          revealTaskFromSearch(t.id);
+        });
+
+        var linkBtn = document.createElement('button');
+        linkBtn.type = 'button';
+        linkBtn.className = 'search-link-btn';
+        linkBtn.textContent = '+ ссылка';
+        if (!canCreateLinkTo(t.id)) {
+          linkBtn.disabled = true;
+          linkBtn.title = 'Эту задачу нельзя добавить ссылкой на текущую доску';
+        } else {
+          linkBtn.title = 'Добавить ссылку на текущую доску';
+          linkBtn.addEventListener('click', function(ev) {
+            ev.stopPropagation();
+            addSearchLink(t.id);
+          });
+        }
+
+        row.appendChild(openBtn);
+        row.appendChild(linkBtn);
+        els.searchResults.appendChild(row);
+      });
+      els.searchResults.classList.add('open');
     }
 
     function buildBreadcrumbs() {
@@ -952,7 +1224,7 @@
         }
         var btn = document.createElement('button');
         btn.textContent = isRoot(t.id) ? 'Главная' : t.title;
-        btn.addEventListener('click', function() { state.currentId = t.id; persist(); render(); });
+        btn.addEventListener('click', function() { navigateToTask(t.id); });
         els.crumbs.appendChild(btn);
       });
     }
@@ -977,6 +1249,40 @@
       document.querySelectorAll('.nest-zone.over').forEach(function(el) { el.classList.remove('over'); });
     }
 
+    function captureScrollState() {
+      var snapshot = { columns: {}, windowY: window.scrollY || document.documentElement.scrollTop || 0 };
+      document.querySelectorAll('.column').forEach(function(column) {
+        var status = column.dataset.status;
+        var cards = column.querySelector('.cards');
+        if (status && cards) snapshot.columns[status] = cards.scrollTop;
+      });
+      return snapshot;
+    }
+
+    function restoreScrollState(snapshot) {
+      if (!snapshot) return;
+      requestAnimationFrame(function() {
+        Object.keys(snapshot.columns || {}).forEach(function(status) {
+          var cards = document.querySelector('.column[data-status="' + status + '"] .cards');
+          if (cards) cards.scrollTop = snapshot.columns[status];
+        });
+        if (typeof snapshot.windowY === 'number') window.scrollTo(window.scrollX || 0, snapshot.windowY);
+      });
+    }
+
+    function scrollToHighlightedCard() {
+      if (!highlightId) return;
+      requestAnimationFrame(function() {
+        var card = document.querySelector('.card[data-id="' + highlightId + '"]');
+        if (!card) return;
+        card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setTimeout(function() {
+          card.classList.remove('highlighted');
+          if (highlightId === card.dataset.id) highlightId = null;
+        }, 3200);
+      });
+    }
+
     function getDropPosition(ev, card) {
       var rect = card.getBoundingClientRect();
       return ev.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
@@ -988,7 +1294,7 @@
       var target = realTask(itemId);
 
       var card = document.createElement('article');
-      card.className = 'card' + (isLinkTask(item) ? ' link-card' : '');
+      card.className = 'card' + (isLinkTask(item) ? ' link-card' : '') + (itemId === highlightId ? ' highlighted' : '');
       card.draggable = !isRoot(itemId);
       card.dataset.id = itemId;
 
@@ -1102,12 +1408,6 @@
         childBadge.textContent = String(doneChildrenCount(itemId)) + '/' + String(childrenCount) + ' внутри';
         badges.appendChild(childBadge);
       }
-      if (target && target.manualInProgress && target.status === 'in_progress') {
-        var manualBadge = document.createElement('span');
-        manualBadge.className = 'badge';
-        manualBadge.textContent = 'вручную начато';
-        badges.appendChild(manualBadge);
-      }
       if (target && target.manualDone && target.status === 'done') {
         var doneBadge = document.createElement('span');
         doneBadge.className = 'badge';
@@ -1194,7 +1494,8 @@
       els.stats.textContent = String(realTasks.length) + ' задач • ' + String(done) + ' сделано • ' + String(links.length) + ' ссылок';
     }
 
-    function render() {
+    function render(options) {
+      var scrollSnapshot = options && options.preserveScroll ? captureScrollState() : null;
       if (!getTask(state.currentId) || isLinkTask(getTask(state.currentId))) state.currentId = state.rootId;
       buildBreadcrumbs();
       renderStats();
@@ -1202,6 +1503,8 @@
       ['planned', 'in_progress', 'done'].forEach(function(statusId) {
         els.board.appendChild(renderColumn(statusId));
       });
+      restoreScrollState(scrollSnapshot);
+      scrollToHighlightedCard();
     }
 
     function exportState() {
@@ -1243,6 +1546,9 @@
 
     function bindUi() {
       els.stats = document.getElementById('stats');
+      els.searchWrap = document.getElementById('searchWrap');
+      els.searchInput = document.getElementById('searchInput');
+      els.searchResults = document.getElementById('searchResults');
       els.menuBtn = document.getElementById('menuBtn');
       els.menu = document.getElementById('menu');
       els.crumbs = document.getElementById('crumbs');
@@ -1250,7 +1556,6 @@
       els.titleInput = document.getElementById('titleInput');
       els.descInput = document.getElementById('descInput');
       els.addBtn = document.getElementById('addBtn');
-      els.linkBtn = document.getElementById('linkBtn');
       els.exportBtn = document.getElementById('exportBtn');
       els.importBtn = document.getElementById('importBtn');
       els.resetBtn = document.getElementById('resetBtn');
@@ -1260,13 +1565,26 @@
         ev.stopPropagation();
         els.menu.classList.toggle('open');
       });
-      document.addEventListener('click', function() { els.menu.classList.remove('open'); });
+      document.addEventListener('click', function() { els.menu.classList.remove('open'); hideSearchResults(); });
       els.menu.addEventListener('click', function(ev) { ev.stopPropagation(); });
+
+      els.searchWrap.addEventListener('click', function(ev) { ev.stopPropagation(); });
+      els.searchInput.addEventListener('input', renderSearchResults);
+      els.searchInput.addEventListener('focus', renderSearchResults);
+      els.searchInput.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Escape') {
+          hideSearchResults();
+          els.searchInput.blur();
+        }
+        if (ev.key === 'Enter') {
+          var first = searchMatches(els.searchInput.value)[0];
+          if (first) revealTaskFromSearch(first.id);
+        }
+      });
 
       els.addBtn.addEventListener('click', addTaskFromInputs);
       els.titleInput.addEventListener('keydown', function(ev) { if (ev.key === 'Enter') addTaskFromInputs(); });
       els.descInput.addEventListener('keydown', function(ev) { if (ev.key === 'Enter') addTaskFromInputs(); });
-      els.linkBtn.addEventListener('click', addLinkTaskFromPrompt);
       els.exportBtn.addEventListener('click', exportState);
       els.importBtn.addEventListener('click', function() { els.fileInput.click(); });
       els.fileInput.addEventListener('change', function(ev) {
@@ -1279,7 +1597,20 @@
     document.addEventListener('DOMContentLoaded', function() {
       bindUi();
       loadState();
+      var urlTaskId = taskIdFromLocation();
+      if (urlTaskId && getTask(urlTaskId) && !isLinkTask(getTask(urlTaskId))) {
+        state.currentId = urlTaskId;
+        persist();
+      }
+      updateBrowserHistory('replace');
       render();
+
+      window.addEventListener('popstate', function(ev) {
+        var id = ev.state && ev.state.currentId ? ev.state.currentId : taskIdFromLocation();
+        state.currentId = validBoardId(id);
+        persist();
+        render();
+      });
     });
   </script>
 </body>
