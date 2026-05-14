@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Рекурсивная канбан-доска v7</title>
+  <title>Рекурсивная канбан-доска</title>
   <style>
     :root {
       --bg: #0b1020;
@@ -286,6 +286,14 @@
       font-size: 13px;
     }
     .crumbs button:hover, .crumb:hover { transform: translateY(-1px); background: rgba(255,255,255,.07); }
+    body.is-dragging .crumbs button { outline: 1px dashed rgba(124,156,255,.26); outline-offset: 2px; }
+    .crumbs button.crumb-drop {
+      background: rgba(142,240,208,.13);
+      border-color: rgba(142,240,208,.56);
+      color: #dcfff6;
+      box-shadow: 0 0 0 4px rgba(142,240,208,.08);
+      transform: translateY(-1px);
+    }
     .crumb-sep { opacity: .45; color: var(--muted); }
 
     .composer, .creator {
@@ -648,7 +656,7 @@
             children: [], createdAt: now(), updatedAt: now()
           },
           task_6: {
-            id: 'task_6', parentId: 'root', title: 'Пр', description: '',
+            id: 'task_6', parentId: 'root', title: 'hi', description: '',
             status: 'planned', manualDone: false, manualInProgress: false,
             children: [], createdAt: now(), updatedAt: now()
           }
@@ -935,6 +943,40 @@
       if (!item || !target || isLinkTask(target)) return false;
       if (!isLinkTask(item) && isAncestor(itemId, targetContainerId)) return false;
       return true;
+    }
+
+    function canMoveToContainer(itemId, targetContainerId) {
+      return canMoveInside(itemId, targetContainerId);
+    }
+
+    function insertIntoContainerByStatus(itemId, targetContainerId, status) {
+      var item = getTask(itemId);
+      var target = getTask(targetContainerId);
+      if (!item || !target || isRoot(itemId)) return false;
+
+      removeFromParent(itemId);
+      item.parentId = targetContainerId;
+
+      var index = target.children.length;
+      var lastSameStatusIndex = -1;
+      target.children.forEach(function(childId, childIndex) {
+        if (effectiveStatus(childId) === status) lastSameStatusIndex = childIndex;
+      });
+      if (lastSameStatusIndex >= 0) index = lastSameStatusIndex + 1;
+
+      target.children.splice(index, 0, itemId);
+      item.updatedAt = now();
+      target.updatedAt = now();
+      return true;
+    }
+
+    function moveToContainer(itemId, targetContainerId) {
+      if (!canMoveToContainer(itemId, targetContainerId)) return;
+      var status = effectiveStatus(itemId);
+      if (insertIntoContainerByStatus(itemId, targetContainerId, status)) {
+        recalcAll(true);
+        render({ preserveScroll: true });
+      }
     }
 
     function moveToColumn(itemId, status, referenceId, placement) {
@@ -1224,7 +1266,28 @@
         }
         var btn = document.createElement('button');
         btn.textContent = isRoot(t.id) ? 'Главная' : t.title;
+        btn.title = 'Открыть уровень. Во время перетаскивания можно отпустить задачу сюда, чтобы вынести её на этот уровень.';
         btn.addEventListener('click', function() { navigateToTask(t.id); });
+        btn.addEventListener('dragover', function(ev) {
+          if (!draggingId || !canMoveToContainer(draggingId, t.id)) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          clearDropMarkers();
+          btn.classList.add('crumb-drop');
+          ev.dataTransfer.dropEffect = 'move';
+        });
+        btn.addEventListener('dragleave', function(ev) {
+          if (!btn.contains(ev.relatedTarget)) btn.classList.remove('crumb-drop');
+        });
+        btn.addEventListener('drop', function(ev) {
+          if (!draggingId || !canMoveToContainer(draggingId, t.id)) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          var dragged = ev.dataTransfer.getData('text/plain') || draggingId;
+          btn.classList.remove('crumb-drop');
+          clearDropMarkers();
+          if (dragged) moveToContainer(dragged, t.id);
+        });
         els.crumbs.appendChild(btn);
       });
     }
@@ -1247,6 +1310,7 @@
         el.classList.remove('drop-inside', 'drop-before', 'drop-after');
       });
       document.querySelectorAll('.nest-zone.over').forEach(function(el) { el.classList.remove('over'); });
+      document.querySelectorAll('.crumb-drop').forEach(function(el) { el.classList.remove('crumb-drop'); });
     }
 
     function captureScrollState() {
