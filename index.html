@@ -323,8 +323,10 @@
     .board {
       min-height: 0;
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(var(--columns-count, 3), minmax(270px, 1fr));
       gap: 14px;
+      overflow-x: auto;
+      padding-bottom: 4px;
     }
     .column {
       min-height: 0;
@@ -342,17 +344,55 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       padding: 14px 16px;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
     }
     .column-title {
+      min-width: 0;
       display: flex;
       gap: 10px;
       align-items: center;
       font-weight: 700;
       font-size: 15px;
     }
+    .column-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .column-right {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .column-tools {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .column-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.045);
+      color: var(--muted);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      line-height: 1;
+      transition: .18s ease;
+    }
+    .column-icon:hover {
+      transform: translateY(-1px);
+      color: var(--text);
+      background: rgba(255,255,255,.09);
+    }
+    .column-icon.delete { color: #ffcaca; }
     .dot {
       width: 12px;
       height: 12px;
@@ -506,7 +546,7 @@
     @media (max-width: 1050px) {
       body { overflow: auto; }
       .shell { height: auto; }
-      .board { grid-template-columns: 1fr; }
+      .board { grid-template-columns: 1fr !important; overflow-x: visible; }
       .composer, .creator { grid-template-columns: 1fr; }
       .topbar { align-items: flex-start; flex-direction: column; }
       .title-wrap { width: 100%; }
@@ -537,6 +577,7 @@
         <div class="menu" id="menu">
           <button class="button" id="exportBtn">Экспорт JSON</button>
           <button class="button" id="importBtn">Импорт JSON</button>
+          <button class="button" id="addColumnBtn">Добавить столбец</button>
           <button class="button danger" id="resetBtn">Сбросить демо</button>
         </div>
       </div>
@@ -558,12 +599,93 @@
   <script>
     'use strict';
 
-    var STORAGE_KEY = 'recursive-kanban-board-v2';
-    var STATUSES = {
-      planned: { id: 'planned', title: 'Запланировано' },
-      in_progress: { id: 'in_progress', title: 'В процессе' },
-      done: { id: 'done', title: 'Сделано' }
-    };
+    var STORAGE_KEY = 'recursive-kanban-board-v3';
+    var LEGACY_STORAGE_KEY = 'recursive-kanban-board-v2';
+    var DEFAULT_COLUMNS = [
+      { id: 'planned', title: 'Запланировано', color: '#7ea1ff', locked: true },
+      { id: 'in_progress', title: 'В процессе', color: '#ffbf69', locked: true },
+      { id: 'done', title: 'Сделано', color: '#77e4a1', locked: true }
+    ];
+    var CORE_COLUMN_IDS = ['planned', 'in_progress', 'done'];
+
+    function cloneDefaultColumns() {
+      return DEFAULT_COLUMNS.map(function(col) {
+        return { id: col.id, title: col.title, color: col.color, locked: !!col.locked };
+      });
+    }
+
+    function validateColor(value, fallback) {
+      var color = safeText(value).trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(color)) return color;
+      return fallback || '#7c9cff';
+    }
+
+    function normalizeColumnId(value) {
+      return safeText(value).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    }
+
+    function normalizeColumns(input) {
+      var defaults = cloneDefaultColumns();
+      if (!Array.isArray(input)) return defaults;
+
+      var byId = {};
+      input.forEach(function(raw) {
+        if (!raw || typeof raw !== 'object') return;
+        var id = normalizeColumnId(raw.id);
+        if (!id) return;
+        byId[id] = raw;
+      });
+
+      var result = defaults.map(function(base) {
+        var raw = byId[base.id] || {};
+        return {
+          id: base.id,
+          title: safeText(raw.title || base.title).trim() || base.title,
+          color: validateColor(raw.color, base.color),
+          locked: true
+        };
+      });
+
+      var custom = [];
+      var seen = { planned: true, in_progress: true, done: true };
+      input.forEach(function(raw) {
+        if (!raw || typeof raw !== 'object') return;
+        var id = normalizeColumnId(raw.id);
+        if (!id || seen[id] || CORE_COLUMN_IDS.indexOf(id) >= 0) return;
+        seen[id] = true;
+        custom.push({
+          id: id,
+          title: safeText(raw.title || 'Новый этап').trim() || 'Новый этап',
+          color: validateColor(raw.color, '#b99cff'),
+          locked: false
+        });
+      });
+
+      return [result[0], result[1]].concat(custom, [result[2]]);
+    }
+
+    function columnById(id) {
+      var columns = state && Array.isArray(state.columns) ? state.columns : DEFAULT_COLUMNS;
+      return columns.find(function(col) { return col.id === id; }) || null;
+    }
+
+    function columnTitle(id) {
+      var col = columnById(id);
+      return col ? col.title : id;
+    }
+
+    function columnIds() {
+      var columns = state && Array.isArray(state.columns) ? state.columns : DEFAULT_COLUMNS;
+      return columns.map(function(col) { return col.id; });
+    }
+
+    function plannedStatusId() { return 'planned'; }
+    function activeStatusId() { return 'in_progress'; }
+    function doneStatusId() { return 'done'; }
+
+    function isKnownStatus(status) {
+      return columnIds().indexOf(status) >= 0;
+    }
 
     var els = {};
     var state = null;
@@ -624,6 +746,8 @@
         rootId: 'root',
         currentId: 'root',
         nextId: 6,
+        nextColumnId: 1,
+        columns: cloneDefaultColumns(),
         tasks: {
           root: {
             id: 'root', parentId: null, title: 'Главная доска', description: 'Корневой уровень',
@@ -674,8 +798,18 @@
         rootId: input.rootId || 'root',
         currentId: input.currentId || input.rootId || 'root',
         nextId: Number(input.nextId || 1),
+        nextColumnId: Number(input.nextColumnId || 1),
+        columns: normalizeColumns(input.columns),
         tasks: input.tasks
       };
+
+      var maxColumnNumber = 0;
+      s.columns.forEach(function(col) {
+        var match = safeText(col.id).match(/^custom_(\d+)$/);
+        if (match) maxColumnNumber = Math.max(maxColumnNumber, Number(match[1]));
+      });
+      s.nextColumnId = Math.max(1, s.nextColumnId, maxColumnNumber + 1);
+      var validStatuses = s.columns.map(function(col) { return col.id; });
 
       if (!s.tasks[s.rootId]) {
         s.tasks[s.rootId] = fallback.tasks.root;
@@ -692,9 +826,10 @@
         t.children = t.children.filter(function(childId) { return !!s.tasks[childId]; });
         t.title = safeText(t.title || (isLinkTask(t) ? 'Ссылка' : 'Без названия'));
         t.description = safeText(t.description);
-        t.status = ['planned', 'in_progress', 'done'].indexOf(t.status) >= 0 ? t.status : 'planned';
+        t.status = validStatuses.indexOf(t.status) >= 0 ? t.status : 'planned';
         t.manualDone = !!t.manualDone;
         t.manualInProgress = !!t.manualInProgress;
+        t.manualStatus = validStatuses.indexOf(t.manualStatus) >= 0 && t.manualStatus !== 'done' ? t.manualStatus : (t.manualInProgress ? 'in_progress' : null);
         t.createdAt = t.createdAt || now();
         t.updatedAt = t.updatedAt || now();
         if (isLinkTask(t) && !s.tasks[t.targetId]) delete s.tasks[id];
@@ -722,7 +857,7 @@
 
     function loadState() {
       try {
-        var raw = localStorage.getItem(STORAGE_KEY);
+        var raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
         if (raw) return normalizeState(JSON.parse(raw));
       } catch (err) {
         console.warn('Не удалось загрузить localStorage:', err);
@@ -743,7 +878,7 @@
         var target = getTask(t.targetId);
         return target ? target.status : 'planned';
       }
-      return t.status || 'planned';
+      return isKnownStatus(t.status) ? t.status : plannedStatusId();
     }
 
     function effectiveTitle(itemId) {
@@ -787,15 +922,21 @@
       }
 
       if (task.manualDone) {
-        if (task.status !== 'done') { task.status = 'done'; task.updatedAt = now(); return true; }
+        if (task.status !== doneStatusId()) { task.status = doneStatusId(); task.updatedAt = now(); return true; }
         return false;
       }
 
       if (!Array.isArray(task.children) || task.children.length === 0) return false;
 
-      var desired = task.manualInProgress ? 'in_progress' : 'planned';
-      var hasActiveChild = task.children.some(function(childId) { return effectiveStatus(childId) !== 'planned'; });
-      if (hasActiveChild) desired = 'in_progress';
+      var desired = plannedStatusId();
+      if (task.manualStatus && isKnownStatus(task.manualStatus) && task.manualStatus !== doneStatusId()) {
+        desired = task.manualStatus;
+      } else if (task.manualInProgress) {
+        desired = activeStatusId();
+      }
+
+      var hasActiveChild = task.children.some(function(childId) { return effectiveStatus(childId) !== plannedStatusId(); });
+      if (hasActiveChild && desired === plannedStatusId()) desired = activeStatusId();
 
       if (task.status !== desired) {
         task.status = desired;
@@ -827,9 +968,10 @@
 
       var t = getTask(targetId);
       if (!t || isLinkTask(t)) return;
-      t.status = 'done';
+      t.status = doneStatusId();
       t.manualDone = true;
       t.manualInProgress = false;
+      t.manualStatus = null;
       t.updatedAt = now();
 
       t.children.forEach(function(childId) {
@@ -842,12 +984,14 @@
       var t = getTask(id);
       if (!t || isLinkTask(t) || isRoot(id)) return;
 
-      if (status === 'done') {
+      status = isKnownStatus(status) ? status : plannedStatusId();
+      if (status === doneStatusId()) {
         markDoneRecursive(id, {});
       } else {
         t.status = status;
         t.manualDone = false;
-        t.manualInProgress = status === 'in_progress';
+        t.manualInProgress = status !== plannedStatusId();
+        t.manualStatus = status !== plannedStatusId() ? status : null;
         t.updatedAt = now();
       }
     }
@@ -868,6 +1012,7 @@
         status: 'planned',
         manualDone: false,
         manualInProgress: false,
+        manualStatus: null,
         children: [],
         createdAt: now(),
         updatedAt: now()
@@ -891,6 +1036,7 @@
         status: 'planned',
         manualDone: false,
         manualInProgress: false,
+        manualStatus: null,
         children: [],
         createdAt: now(),
         updatedAt: now()
@@ -1015,6 +1161,71 @@
       }
       applyItemStatus(itemId, 'planned');
       attachToParent(itemId, targetContainerId);
+      recalcAll(true);
+      render({ preserveScroll: true });
+    }
+
+
+    function nextCustomColumnId() {
+      state.nextColumnId = Math.max(1, Number(state.nextColumnId || 1));
+      var id;
+      do {
+        id = 'custom_' + state.nextColumnId;
+        state.nextColumnId += 1;
+      } while (columnById(id));
+      return id;
+    }
+
+    function addColumn() {
+      var title = prompt('Название нового столбца:', 'Новый этап');
+      if (title === null) return;
+      title = title.trim();
+      if (!title) return;
+
+      var color = prompt('Цвет индикатора в формате #RRGGBB:', '#b99cff');
+      if (color === null) return;
+      color = validateColor(color, '#b99cff');
+
+      var doneIndex = state.columns.findIndex(function(col) { return col.id === doneStatusId(); });
+      if (doneIndex < 0) doneIndex = state.columns.length;
+      state.columns.splice(doneIndex, 0, {
+        id: nextCustomColumnId(),
+        title: title,
+        color: color,
+        locked: false
+      });
+      persist();
+      render({ preserveScroll: true });
+    }
+
+    function editColumn(statusId) {
+      var col = columnById(statusId);
+      if (!col) return;
+      var title = prompt('Название столбца:', col.title || '');
+      if (title === null) return;
+      title = title.trim();
+      if (!title) return;
+      var color = prompt('Цвет индикатора в формате #RRGGBB:', col.color || '#7c9cff');
+      if (color === null) return;
+      col.title = title;
+      col.color = validateColor(color, col.color || '#7c9cff');
+      persist();
+      render({ preserveScroll: true });
+    }
+
+    function deleteColumn(statusId) {
+      var col = columnById(statusId);
+      if (!col || col.locked) return;
+      var fallback = activeStatusId();
+      if (!confirm('Удалить столбец «' + col.title + '»? Задачи из него будут перенесены в «' + columnTitle(fallback) + '».')) return;
+      Object.values(state.tasks).forEach(function(t) {
+        if (t && t.status === statusId) {
+          t.status = fallback;
+          if (t.manualStatus === statusId) t.manualStatus = fallback;
+          t.updatedAt = now();
+        }
+      });
+      state.columns = state.columns.filter(function(c) { return c.id !== statusId; });
       recalcAll(true);
       render({ preserveScroll: true });
     }
@@ -1215,7 +1426,7 @@
         title.textContent = t.title || 'Без названия';
         var meta = document.createElement('div');
         meta.className = 'search-result-meta';
-        var statusTitle = STATUSES[t.status] ? STATUSES[t.status].title : t.status;
+        var statusTitle = columnTitle(t.status);
         meta.textContent = statusTitle + ' • ' + taskPath(t.id);
         openBtn.appendChild(title);
         openBtn.appendChild(meta);
@@ -1510,16 +1721,43 @@
 
       var head = document.createElement('div');
       head.className = 'column-head';
+      var columnConfig = columnById(statusId) || { title: statusId, color: '#7c9cff', locked: true };
       var title = document.createElement('div');
       title.className = 'column-title';
       var dot = document.createElement('span');
-      dot.className = 'dot ' + statusId;
+      dot.className = 'dot';
+      dot.style.background = validateColor(columnConfig.color, '#7c9cff');
       title.appendChild(dot);
-      title.appendChild(document.createTextNode(STATUSES[statusId].title));
+      var name = document.createElement('span');
+      name.className = 'column-name';
+      name.textContent = columnConfig.title;
+      title.appendChild(name);
       var count = document.createElement('span');
       count.className = 'count';
+      var tools = document.createElement('div');
+      tools.className = 'column-tools';
+      var editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'column-icon';
+      editBtn.textContent = '✎';
+      editBtn.title = 'Переименовать столбец и изменить цвет';
+      editBtn.addEventListener('click', function(ev) { ev.stopPropagation(); editColumn(statusId); });
+      tools.appendChild(editBtn);
+      if (!columnConfig.locked) {
+        var deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'column-icon delete';
+        deleteBtn.textContent = '×';
+        deleteBtn.title = 'Удалить пользовательский столбец';
+        deleteBtn.addEventListener('click', function(ev) { ev.stopPropagation(); deleteColumn(statusId); });
+        tools.appendChild(deleteBtn);
+      }
+      var right = document.createElement('div');
+      right.className = 'column-right';
+      right.appendChild(count);
+      right.appendChild(tools);
       head.appendChild(title);
-      head.appendChild(count);
+      head.appendChild(right);
       column.appendChild(head);
 
       var cards = document.createElement('div');
@@ -1558,7 +1796,9 @@
       buildBreadcrumbs();
       renderStats();
       els.board.innerHTML = '';
-      ['planned', 'in_progress', 'done'].forEach(function(statusId) {
+      var columns = columnIds();
+      els.board.style.setProperty('--columns-count', String(columns.length));
+      columns.forEach(function(statusId) {
         els.board.appendChild(renderColumn(statusId));
       });
       restoreScrollState(scrollSnapshot);
@@ -1616,6 +1856,7 @@
       els.addBtn = document.getElementById('addBtn');
       els.exportBtn = document.getElementById('exportBtn');
       els.importBtn = document.getElementById('importBtn');
+      els.addColumnBtn = document.getElementById('addColumnBtn');
       els.resetBtn = document.getElementById('resetBtn');
       els.fileInput = document.getElementById('fileInput');
 
@@ -1645,6 +1886,7 @@
       els.descInput.addEventListener('keydown', function(ev) { if (ev.key === 'Enter') addTaskFromInputs(); });
       els.exportBtn.addEventListener('click', exportState);
       els.importBtn.addEventListener('click', function() { els.fileInput.click(); });
+      els.addColumnBtn.addEventListener('click', addColumn);
       els.fileInput.addEventListener('change', function(ev) {
         importStateFromFile(ev.target.files[0]);
         ev.target.value = '';
